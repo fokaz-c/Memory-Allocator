@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <stdint.h>
+#include <stdio.h>
 
 typedef struct mem_block {
     size_t size;
@@ -184,4 +185,27 @@ void *ma_malloc(size_t size) {
     new_block->is_Free = false;
 
     return (void *)((char *)new_block + sizeof(mem_block));
+}
+
+
+void ma_free(void *ptr) {
+    if (ptr == NULL) return;
+
+    mem_block *block = (mem_block *)((char *)ptr - sizeof(mem_block));
+    add_to_free_mem_block_list(block);
+}
+
+void print_free_list() {
+    mem_block *current = free_mem_block_list_head;
+    int count = 0;
+    printf("Free list:\n");
+    while (current != NULL) {
+        count ++;
+        printf("  Count %d | Block at %p | size: %zu | is_Free: %d | prev: %p | next: %p\n",
+            count,
+            (void*)current, current->size, current->is_Free,
+            (void*)current->prev, (void*)current->next);
+        current = current->next;
+    }
+    printf("\n");
 }

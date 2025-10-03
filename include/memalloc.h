@@ -22,5 +22,5 @@ void *ma_realloc(void* ptr, size_t size);
  * @brief- ma_free function frees the memory space pointed by ptr.
  */
 void ma_free(void *ptr);
-
+void print_free_list();
 #endif
