@@ -1,0 +1,28 @@
+# Object files
+*.o
+*.obj
+
+# Executables
+*.out
+*.exe
+*.out.*
+*.a
+*.so
+
+# Editor files
+*.swp
+*.swo
+*.swn
+
+# VSCode
+.vscode/
+
+# Zed editor
+.zed/
+
+# Build folders
+/build/
+
+#misc
+.cache
+compile_commands.json
