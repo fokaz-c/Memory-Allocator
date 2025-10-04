@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 
 typedef struct mem_block {
     size_t size;
@@ -193,6 +194,19 @@ void ma_free(void *ptr) {
 
     mem_block *block = (mem_block *)((char *)ptr - sizeof(mem_block));
     add_to_free_mem_block_list(block);
+}
+
+void *ma_calloc(size_t n, size_t size) {
+    size_t total_size = n * size;
+    if (n == 0 || total_size/ n != size) {
+        return NULL;
+    }
+
+    void *ptr = ma_malloc(total_size);
+    if (ptr == NULL) return NULL;
+    memset(ptr, 0, total_size);
+
+    return ptr;
 }
 
 void print_free_list() {
