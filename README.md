@@ -1,54 +1,77 @@
 # Custom Memory Allocator in C
 
-This project is a custom implementation of a dynamic memory allocator in C. It demonstrates how a basic memory allocator can be built from the ground up using the `sbrk()` system call to manage the program's heap.
+This project is a **custom implementation of a dynamic memory allocator in C**, built from scratch to explore how low-level heap management works.
+It replicates the behavior of standard C library functions like `malloc`, `calloc`, `realloc`, and `free` using the `sbrk()` system call for direct heap manipulation.
+
+---
+
+## Overview
+
+The allocator demonstrates how dynamic memory allocation can be managed manually in user space.
+It implements core allocation strategies and data structures used in real-world memory managers, with a focus on **efficiency**, **fragmentation control**, and **extensibility** for future improvements.
+
+---
 
 ## Implementation Details
 
-The allocator uses the following strategies to manage memory:
+The allocator is built around these core design elements:
 
-*   **Heap Management**: Memory is requested from the operating system using the `sbrk()` system call, which increments the program's data segment.
-*   **Data Structure**: A doubly linked list is used to maintain a list of free memory blocks. Each block is preceded by a `mem_block` header that stores metadata, including the block's size, its free status, and pointers to the next and previous blocks in the free list.
-*   **Allocation Strategy**: A **best-fit** algorithm is employed. When `ma_malloc` is called, it traverses the free list to find the smallest block that is large enough to satisfy the requested size. This helps to minimize wasted space (internal fragmentation).
-*   **Block Splitting**: If a free block is found that is larger than the requested size, it is split. The required portion is returned to the user, and the remainder is kept as a new, smaller free block in the list.
-*   **Coalescing**: The allocator includes functionality to merge adjacent free blocks (`coalesce_with_neighbors`). This process helps reduce external fragmentation by creating larger contiguous blocks of free memory.
+* **Heap Management** – Uses `sbrk()` to expand the program’s data segment on demand.
+* **Data Structure** – A **doubly linked list** maintains free and allocated blocks. Each block starts with a `mem_block` header containing metadata such as block size, free status, and links to adjacent blocks.
+* **Allocation Strategy** – Employs a **best-fit** approach to minimize internal fragmentation by selecting the smallest available block that fits the request.
+* **Block Splitting** – If a free block is significantly larger than required, it is split into an allocated and a free portion.
+* **Coalescing** – Adjacent free blocks are merged automatically by `coalesce_with_neighbors()` to reduce external fragmentation.
+
+---
 
 ## API
 
-The following function is currently implemented:
+The allocator provides the following functions:
 
-*   `void *ma_malloc(size_t size)`: Allocates `size` bytes of uninitialized memory.
-*   **`ma_free(void *ptr)`**: Memory deallocation to mark blocks as free and add them back to the free list.
-*   **`ma_calloc(size_t n, size_t size)`**: Support for allocating and zero-initializing memory for an array of elements.
+* `void *ma_malloc(size_t size)` – Allocates `size` bytes of uninitialized memory.
+* `void ma_free(void *ptr)` – Deallocates memory and returns it to the free list.
+* `void *ma_calloc(size_t n, size_t size)` – Allocates and zero-initializes memory for an array.
+* `void *ma_realloc(void *ptr, size_t size)` – Resizes an existing allocation, preserving its contents.
 
-## How to Build and Run
+---
 
-A `Makefile` is provided for easy compilation and execution.
+## Build and Run
 
-*   **Build the project:**
-    ```sh
-    make
-    ```
-    This will compile the source files and place the object files and the final executable in the `build/` directory.
+A `Makefile` is provided for easy compilation and testing.
 
-*   **Run the executable:**
-    ```sh
-    make run
-    ```
+**Build the project:**
 
-*   **Clean the build artifacts:**
-    ```sh
-    make clean
-    ```
+```bash
+make
+```
 
-## Future Work
+**Run the executable:**
 
-The current implementation provides a foundation for a more complete memory allocator. Future enhancements will include:
+```bash
+make run
+```
 
-*   **`ma_realloc(void* ptr, size_t size)`**: Implement resizing of existing memory allocations.
+**Clean build artifacts:**
 
-## Further Reading
+```bash
+make clean
+```
 
-For more background on the concepts used in this project, see the following documents:
+---
 
-*   [Dynamic Memory Allocation in C](./docs/dynamic-memory-allocation-in-c.md)
-*   [Memory Layout in C](./docs/memory-layout-c.md)
+## Ongoing Development
+
+Active development is focused on **enhancing performance, safety, and usability**.
+Current efforts include:
+
+* **Thread Safety** – Introducing synchronization primitives to make the allocator multi-threaded.
+* **Performance Profiling** – Adding benchmarking tools to measure allocation and free times.
+* **Debug Utilities** – Building diagnostic APIs for leak detection and heap visualization.
+---
+
+## References and Further Reading
+
+For more context on the concepts behind this project:
+
+* [Dynamic Memory Allocation in C](./docs/dynamic-memory-allocation-in-c.md)
+* [Memory Layout in C](./docs/memory-layout-c.md)
