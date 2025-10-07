@@ -1,5 +1,6 @@
 #include <memalloc.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -201,15 +202,56 @@ void *ma_calloc(size_t n, size_t size) {
     if (n == 0 || total_size/ n != size) {
         return NULL;
     }
-
     void *ptr = ma_malloc(total_size);
+
     if (ptr == NULL) return NULL;
     memset(ptr, 0, total_size);
 
     return ptr;
 }
 
-void print_free_list() {
+void *ma_realloc(void *ptr, size_t size) {
+    if (ptr == NULL) return ma_malloc(size);
+
+    if (size == 0) {
+        ma_free(ptr);
+        return NULL;
+    }
+
+    mem_block *current = (mem_block*)((char*)ptr - sizeof(mem_block));
+    size_t old_size = current->size;
+
+    if (size <= old_size) {
+        return ptr;
+    }
+
+    size_t needed = size - old_size;
+
+    mem_block *free_node = free_mem_block_list_head;
+    while (free_node != NULL) {
+        if (are_adjacent(current, free_node) && free_node->size >= needed) {
+            remove_from_free_mem_list(free_node);
+            current->size += sizeof(mem_block) + free_node->size;
+
+            if (current->size > size + sizeof(mem_block) + 1) {
+                split_block(current, size);
+            }
+
+            return ptr;
+        }
+        free_node = free_node->next;
+    }
+
+    void *newptr = ma_malloc(size);
+    if (newptr == NULL) return NULL;
+
+    memcpy(newptr, ptr, old_size);
+    ma_free(ptr);
+
+    return newptr;
+}
+
+void ma_print_free_list() {
     mem_block *current = free_mem_block_list_head;
     int count = 0;
     printf("Free list:\n");

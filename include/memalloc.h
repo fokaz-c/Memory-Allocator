@@ -16,11 +16,11 @@ void *ma_calloc(size_t n, size_t size);
 /*
  * @brief- ma_realloc function changes the size of the memory block pointed by "ptr" to "size" bytes.
  */
-void *ma_realloc(void* ptr, size_t size);
+void *ma_realloc(void *ptr, size_t size);
 
 /*
  * @brief- ma_free function frees the memory space pointed by ptr.
  */
 void ma_free(void *ptr);
-void print_free_list();
+void ma_print_free_list();
 #endif

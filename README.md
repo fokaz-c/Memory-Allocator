@@ -17,6 +17,8 @@ The allocator uses the following strategies to manage memory:
 The following function is currently implemented:
 
 *   `void *ma_malloc(size_t size)`: Allocates `size` bytes of uninitialized memory.
+*   **`ma_free(void *ptr)`**: Memory deallocation to mark blocks as free and add them back to the free list.
+*   **`ma_calloc(size_t n, size_t size)`**: Support for allocating and zero-initializing memory for an array of elements.
 
 ## How to Build and Run
 
@@ -42,8 +44,6 @@ A `Makefile` is provided for easy compilation and execution.
 
 The current implementation provides a foundation for a more complete memory allocator. Future enhancements will include:
 
-*   **`ma_free(void *ptr)`**: Implement memory deallocation to mark blocks as free and add them back to the free list.
-*   **`ma_calloc(size_t n, size_t size)`**: Add support for allocating and zero-initializing memory for an array of elements.
 *   **`ma_realloc(void* ptr, size_t size)`**: Implement resizing of existing memory allocations.
 
 ## Further Reading
