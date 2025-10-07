@@ -1,23 +1,73 @@
-#include <memalloc.h>
-#include <stdbool.h>
-#include <stddef.h>
+#include "memalloc.h"
+#include "memalloc_internal.h"
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
-typedef struct mem_block {
-    size_t size;
-    bool is_Free;
-    struct mem_block *prev;
-    struct mem_block *next;
-} mem_block;
+/* ============================================================================
+ * STATIC VARIABLES
+ * ============================================================================ */
 
+/* Head of the free block list */
 static mem_block *free_mem_block_list_head = NULL;
 
+
+/* ============================================================================
+ * INTERNAL HELPER FUNCTIONS
+ * ============================================================================ */
+
 /**
- * Initialize a memory block with a given size.
+ * Check if two memory blocks are physically adjacent in memory.
  */
+static bool are_adjacent(mem_block *first, mem_block *second) {
+    void *end_of_first = (char *)first + sizeof(mem_block) + first->size;
+    return end_of_first == second;
+}
+
+/**
+ * Merge a block with neighboring free blocks to reduce fragmentation.
+ */
+static void coalesce_with_neighbors(mem_block *block) {
+    mem_block *current = free_mem_block_list_head;
+
+    while (current != NULL) {
+        mem_block *next_iter = current->next;
+
+        if (current == block) {
+            current = next_iter;
+            continue;
+        }
+
+        if (are_adjacent(block, current)) {
+            /* Merge: block absorbs current */
+            block->size += sizeof(mem_block) + current->size;
+            remove_from_free_mem_list(current);
+        } else if (are_adjacent(current, block)) {
+            /* Merge: current absorbs block */
+            current->size += sizeof(mem_block) + block->size;
+
+            /* Remove block from free list */
+            if (block->prev != NULL) {
+                block->prev->next = block->next;
+            } else {
+                free_mem_block_list_head = block->next;
+            }
+            if (block->next != NULL) {
+                block->next->prev = block->prev;
+            }
+            return;
+        }
+
+        current = next_iter;
+    }
+}
+
+
+/* ============================================================================
+ * MEMORY BLOCK MANAGEMENT
+ * ============================================================================ */
+
 void mem_block_init(mem_block *block, size_t size) {
     block->size = size;
     block->is_Free = true;
@@ -25,9 +75,6 @@ void mem_block_init(mem_block *block, size_t size) {
     block->next = NULL;
 }
 
-/**
- * Remove a block from the free list and mark it as allocated.
- */
 void remove_from_free_mem_list(mem_block *block) {
     if (free_mem_block_list_head == NULL || block == NULL) {
         return;
@@ -56,51 +103,6 @@ void remove_from_free_mem_list(mem_block *block) {
     }
 }
 
-/**
- * Check if two memory blocks are physically adjacent in memory.
- */
-static bool are_adjacent(mem_block *first, mem_block *second) {
-    void *end_of_first = (char *)first + sizeof(mem_block) + first->size;
-    return end_of_first == second;
-}
-
-/**
- * Merge a block with neighboring free blocks to reduce fragmentation.
- */
-static void coalesce_with_neighbors(mem_block *block) {
-    mem_block *current = free_mem_block_list_head;
-
-    while (current != NULL) {
-        mem_block *next_iter = current->next;
-
-        if (current == block) {
-            current = next_iter;
-            continue;
-        }
-
-        if (are_adjacent(block, current)) {
-            block->size += sizeof(mem_block) + current->size;
-            remove_from_free_mem_list(current);
-        } else if (are_adjacent(current, block)) {
-            current->size += sizeof(mem_block) + block->size;
-            if (block->prev != NULL) {
-                block->prev->next = block->next;
-            } else {
-                free_mem_block_list_head = block->next;
-            }
-            if (block->next != NULL) {
-                block->next->prev = block->prev;
-            }
-            return;
-        }
-
-        current = next_iter;
-    }
-}
-
-/**
- * Add a block to the free list and attempt to coalesce with neighbors.
- */
 void add_to_free_mem_block_list(mem_block *block) {
     if (block == NULL) {
         return;
@@ -121,9 +123,6 @@ void add_to_free_mem_block_list(mem_block *block) {
     coalesce_with_neighbors(block);
 }
 
-/**
- * Find the best fit free block (smallest block that fits the requested size).
- */
 mem_block *find_free_block(size_t size) {
     mem_block *current = free_mem_block_list_head;
     mem_block *best_fit = NULL;
@@ -144,9 +143,6 @@ mem_block *find_free_block(size_t size) {
     return best_fit;
 }
 
-/**
- * Split a large block into an allocated block and a smaller free block.
- */
 void split_block(mem_block *block, size_t size) {
     if (block->size >= size + sizeof(mem_block) + 1) {
         mem_block *new_block = (mem_block *)((char *)block
@@ -154,14 +150,18 @@ void split_block(mem_block *block, size_t size) {
         mem_block_init(new_block, block->size - size - sizeof(mem_block));
 
         block->size = size;
+
         add_to_free_mem_block_list(new_block);
     }
 }
 
-/**
- * Allocate memory by reusing free blocks or extending the program break.
- */
+
+/* ============================================================================
+ * PUBLIC API IMPLEMENTATION
+ * ============================================================================ */
+
 void *ma_malloc(size_t size) {
+    /* Handle edge cases */
     if (size == 0 || size > SIZE_MAX - sizeof(mem_block)) {
         return NULL;
     }
@@ -170,9 +170,7 @@ void *ma_malloc(size_t size) {
 
     if (block != NULL) {
         remove_from_free_mem_list(block);
-
         split_block(block, size);
-
         return (void *)((char *)block + sizeof(mem_block));
     }
 
@@ -189,36 +187,43 @@ void *ma_malloc(size_t size) {
     return (void *)((char *)new_block + sizeof(mem_block));
 }
 
-
 void ma_free(void *ptr) {
-    if (ptr == NULL) return;
+    if (ptr == NULL) {
+        return;
+    }
 
     mem_block *block = (mem_block *)((char *)ptr - sizeof(mem_block));
+
     add_to_free_mem_block_list(block);
 }
 
 void *ma_calloc(size_t n, size_t size) {
     size_t total_size = n * size;
-    if (n == 0 || total_size/ n != size) {
+    if (n == 0 || total_size / n != size) {
         return NULL;
     }
-    void *ptr = ma_malloc(total_size);
 
-    if (ptr == NULL) return NULL;
+    void *ptr = ma_malloc(total_size);
+    if (ptr == NULL) {
+        return NULL;
+    }
+
     memset(ptr, 0, total_size);
 
     return ptr;
 }
 
 void *ma_realloc(void *ptr, size_t size) {
-    if (ptr == NULL) return ma_malloc(size);
+    if (ptr == NULL) {
+        return ma_malloc(size);
+    }
 
     if (size == 0) {
         ma_free(ptr);
         return NULL;
     }
 
-    mem_block *current = (mem_block*)((char*)ptr - sizeof(mem_block));
+    mem_block *current = (mem_block *)((char *)ptr - sizeof(mem_block));
     size_t old_size = current->size;
 
     if (size <= old_size) {
@@ -243,24 +248,36 @@ void *ma_realloc(void *ptr, size_t size) {
     }
 
     void *newptr = ma_malloc(size);
-    if (newptr == NULL) return NULL;
+    if (newptr == NULL) {
+        return NULL;
+    }
 
     memcpy(newptr, ptr, old_size);
+
     ma_free(ptr);
 
     return newptr;
 }
 
-void ma_print_free_list() {
+
+/* ============================================================================
+ * DEBUG AND UTILITY FUNCTIONS
+ * ============================================================================ */
+
+void ma_print_free_list(void) {
     mem_block *current = free_mem_block_list_head;
     int count = 0;
+
     printf("Free list:\n");
     while (current != NULL) {
-        count ++;
+        count++;
         printf("  Count %d | Block at %p | size: %zu | is_Free: %d | prev: %p | next: %p\n",
             count,
-            (void*)current, current->size, current->is_Free,
-            (void*)current->prev, (void*)current->next);
+            (void *)current,
+            current->size,
+            current->is_Free,
+            (void *)current->prev,
+            (void *)current->next);
         current = current->next;
     }
     printf("\n");

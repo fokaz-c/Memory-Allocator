@@ -1,26 +1,45 @@
 #ifndef MEMALLOC_H
 #define MEMALLOC_H
 
-#include<stddef.h>
+#include <stddef.h>
 
-/*
- * @brief- The ma_malloc function allocates "size" bytes and returns a pointer to that allocated memory.
+/* ============================================================================
+ * PUBLIC API - Memory Allocation Functions
+ * ============================================================================ */
+
+/**
+ * Allocate memory of specified size.
+ * @param size Number of bytes to allocate
+ * @return Pointer to allocated memory, or NULL on failure
  */
 void *ma_malloc(size_t size);
 
-/*
- * @brief- The ma_calloc function allocates memory for an array of n elements, each of "size" bytes.
+/**
+ * Free previously allocated memory.
+ * @param ptr Pointer to memory to free (NULL is safe)
+ */
+void ma_free(void *ptr);
+
+/**
+ * Allocate and zero-initialize memory for an array.
+ * @param n Number of elements
+ * @param size Size of each element
+ * @return Pointer to allocated memory, or NULL on failure
  */
 void *ma_calloc(size_t n, size_t size);
 
-/*
- * @brief- ma_realloc function changes the size of the memory block pointed by "ptr" to "size" bytes.
+/**
+ * Resize previously allocated memory.
+ * @param ptr Pointer to memory to resize (NULL acts like malloc)
+ * @param size New size in bytes (0 acts like free)
+ * @return Pointer to resized memory, or NULL on failure
  */
 void *ma_realloc(void *ptr, size_t size);
 
-/*
- * @brief- ma_free function frees the memory space pointed by ptr.
+/**
+ * Print the current state of the free list.
+ * Useful for debugging and understanding allocator behavior.
  */
-void ma_free(void *ptr);
-void ma_print_free_list();
-#endif
+void ma_print_free_list(void);
+
+#endif /* MEMALLOC_H */
