@@ -1,33 +1,71 @@
+/* Modification to memalloc.c */
+
 #include "memalloc.h"
 #include "memalloc_internal.h"
+#include <stddef.h>
+#include <sys/mman.h>
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 /* ============================================================================
+ * CONFIGURATION
+ * ============================================================================ */
+
+#define HEAP_SIZE (size_t)(1024 * 1024)
+
+/* ============================================================================
  * STATIC VARIABLES
  * ============================================================================ */
 
-/* Head of the free block list */
+static char *heap_pool = NULL;
+static size_t heap_offset = 0;
 static mem_block *free_mem_block_list_head = NULL;
+
+
+/* ============================================================================
+ * HEAP INITIALIZATION
+ * ============================================================================ */
+
+static void init_heap(void) {
+    if (heap_pool != NULL) {
+        return;
+    }
+
+    heap_pool = (char *) mmap(
+        NULL,
+        HEAP_SIZE,
+        PROT_READ | PROT_WRITE,
+        MAP_PRIVATE | MAP_ANONYMOUS,
+        -1,
+        0
+    );
+
+    if (heap_pool == MAP_FAILED) {
+        heap_pool = NULL;
+        perror("mmap failed");
+    }
+}
+
+static void cleanup_heap(void) {
+    if (heap_pool != NULL) {
+        munmap(heap_pool, HEAP_SIZE);
+        heap_pool = NULL;
+        heap_offset = 0;
+    }
+}
 
 
 /* ============================================================================
  * INTERNAL HELPER FUNCTIONS
  * ============================================================================ */
 
-/**
- * Check if two memory blocks are physically adjacent in memory.
- */
 static bool are_adjacent(mem_block *first, mem_block *second) {
     void *end_of_first = (char *)first + sizeof(mem_block) + first->size;
     return end_of_first == second;
 }
 
-/**
- * Merge a block with neighboring free blocks to reduce fragmentation.
- */
 static void coalesce_with_neighbors(mem_block *block) {
     mem_block *current = free_mem_block_list_head;
 
@@ -40,14 +78,11 @@ static void coalesce_with_neighbors(mem_block *block) {
         }
 
         if (are_adjacent(block, current)) {
-            /* Merge: block absorbs current */
             block->size += sizeof(mem_block) + current->size;
             remove_from_free_mem_list(current);
         } else if (are_adjacent(current, block)) {
-            /* Merge: current absorbs block */
             current->size += sizeof(mem_block) + block->size;
 
-            /* Remove block from free list */
             if (block->prev != NULL) {
                 block->prev->next = block->next;
             } else {
@@ -161,7 +196,14 @@ void split_block(mem_block *block, size_t size) {
  * ============================================================================ */
 
 void *ma_malloc(size_t size) {
-    /* Handle edge cases */
+    if (heap_pool == NULL) {
+        init_heap();
+    }
+
+    if (heap_pool == NULL) {
+        return NULL;
+    }
+
     if (size == 0 || size > SIZE_MAX - sizeof(mem_block)) {
         return NULL;
     }
@@ -174,15 +216,16 @@ void *ma_malloc(size_t size) {
         return (void *)((char *)block + sizeof(mem_block));
     }
 
-    void *ptr = sbrk(sizeof(mem_block) + size);
 
-    if (ptr == (void *)-1) {
+    if (heap_offset + sizeof(mem_block) + size > HEAP_SIZE) {
         return NULL;
     }
 
-    mem_block *new_block = (mem_block *)ptr;
+    mem_block *new_block = (mem_block *)&heap_pool[heap_offset];
     mem_block_init(new_block, size);
     new_block->is_Free = false;
+
+    heap_offset += sizeof(mem_block) + size;
 
     return (void *)((char *)new_block + sizeof(mem_block));
 }
@@ -193,7 +236,6 @@ void ma_free(void *ptr) {
     }
 
     mem_block *block = (mem_block *)((char *)ptr - sizeof(mem_block));
-
     add_to_free_mem_block_list(block);
 }
 
@@ -280,5 +322,13 @@ void ma_print_free_list(void) {
             (void *)current->next);
         current = current->next;
     }
+    printf("Heap usage: %zu / %zu bytes (%.2f%%)\n",
+           heap_offset, HEAP_SIZE, (double)heap_offset / HEAP_SIZE * 100);
     printf("\n");
+}
+
+/* Add cleanup on exit */
+__attribute__((destructor))
+static void cleanup_on_exit(void) {
+    cleanup_heap();
 }
