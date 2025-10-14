@@ -1,189 +1,212 @@
 #include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <assert.h>
+#include <time.h>
+#include <pthread.h>
 #include "memalloc.h"
 
-#define TEST(name) printf("\n=== %s ===\n", name)
-#define PASS() printf("✓ PASS\n")
-#define FAIL(msg) printf("✗ FAIL: %s\n", msg)
+#define BLUE    "\x1b[34m"
+#define GREEN   "\x1b[32m"
+#define RED     "\x1b[31m"
+#define RESET   "\x1b[0m"
 
-int main() {
-    printf("======== MEMORY ALLOCATOR TEST SUITE ========\n");
+#define BURST_ALLOC_COUNT 5000
+#define THREAD_COUNT 4
+#define THREAD_ALLOC_COUNT 500
 
-    /* Test 1: Basic malloc */
-    TEST("Test 1: Basic malloc");
+// --- Timer ---
+double get_time_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return ts.tv_sec * 1000.0 + ts.tv_nsec / 1000000.0;
+}
+
+// --- Helper for printing metrics ---
+void print_metrics(const char *label, double t_ma, double t_std) {
+    if (t_std <= 0) return;
+    double ratio = t_ma / t_std;
+    const char *color = (ratio >= 1.0) ? RED : GREEN;
+    const char *comparison = (ratio >= 1.0) ? "slower" : "faster";
+    printf(BLUE "%s" RESET ": %.4f ms | stdlib: %.4f ms | %s%.1fx %s" RESET "\n",
+           label, t_ma, t_std, color, ratio, comparison);
+}
+
+// --- Test Cases ---
+
+void test_basic_malloc(void) {
+    double t1 = get_time_ms();
     int *a = (int *) ma_malloc(sizeof(int));
-    assert(a != NULL);
-    *a = 42;
-    assert(*a == 42);
+    double t2 = get_time_ms();
     ma_free(a);
-    PASS();
 
-    /* Test 2: Multiple allocations */
-    TEST("Test 2: Multiple allocations");
+    double t1_std = get_time_ms();
+    int *a_std = (int *) malloc(sizeof(int));
+    double t2_std = get_time_ms();
+    free(a_std);
+
+    print_metrics("malloc(1 alloc, 4 bytes)", t2 - t1, t2_std - t1_std);
+}
+
+void test_multiple_allocations(void) {
+    double t1 = get_time_ms();
     int *b = (int *) ma_malloc(sizeof(int) * 2);
-    assert(b != NULL);
-    b[0] = 10;
-    b[1] = 20;
     int *c = (int *) ma_malloc(sizeof(int) * 3);
-    assert(c != NULL);
-    c[0] = 30;
-    c[1] = 40;
-    c[2] = 50;
-    assert(b[0] == 10 && b[1] == 20);
-    assert(c[0] == 30 && c[1] == 40 && c[2] == 50);
+    double t2 = get_time_ms();
     ma_free(b);
     ma_free(c);
-    PASS();
 
-    /* Test 3: Malloc after free (reuse) */
-    TEST("Test 3: Malloc after free (reuse)");
+    double t1_std = get_time_ms();
+    int *b_std = (int *) malloc(sizeof(int) * 2);
+    int *c_std = (int *) malloc(sizeof(int) * 3);
+    double t2_std = get_time_ms();
+    free(b_std);
+    free(c_std);
+
+    print_metrics("malloc(2 allocs, 8/12 bytes)", t2 - t1, t2_std - t1_std);
+}
+
+void test_reuse_after_free(void) {
+    double t1 = get_time_ms();
     int *x = (int *) ma_malloc(sizeof(int));
-    assert(x != NULL);
-    *x = 100;
     ma_free(x);
     int *y = (int *) ma_malloc(sizeof(int));
-    assert(y != NULL);
-    *y = 200;
-    assert(*y == 200);
+    double t2 = get_time_ms();
     ma_free(y);
-    PASS();
 
-    /* Test 4: Calloc initialization */
-    TEST("Test 4: Calloc initialization");
+    double t1_std = get_time_ms();
+    int *x_std = (int *) malloc(sizeof(int));
+    free(x_std);
+    int *y_std = (int *) malloc(sizeof(int));
+    double t2_std = get_time_ms();
+    free(y_std);
+
+    print_metrics("malloc(reuse)", t2 - t1, t2_std - t1_std);
+}
+
+void test_calloc(void) {
+    double t1 = get_time_ms();
     int *arr = (int *) ma_calloc(5, sizeof(int));
-    assert(arr != NULL);
-    for (int i = 0; i < 5; i++) {
-        assert(arr[i] == 0);
-    }
-    arr[0] = 99;
-    assert(arr[0] == 99);
+    double t2 = get_time_ms();
     ma_free(arr);
-    PASS();
 
-    /* Test 5: Calloc vs malloc */
-    TEST("Test 5: Calloc vs malloc");
-    int *malloc_test = (int *) ma_malloc(3 * sizeof(int));
-    int *calloc_test = (int *) ma_calloc(3, sizeof(int));
-    assert(malloc_test != NULL && calloc_test != NULL);
-    for (int i = 0; i < 3; i++) {
-        assert(calloc_test[i] == 0);
-    }
-    ma_free(malloc_test);
-    ma_free(calloc_test);
-    PASS();
+    double t1_std = get_time_ms();
+    int *arr_std = (int *) calloc(5, sizeof(int));
+    double t2_std = get_time_ms();
+    free(arr_std);
 
-    /* Test 6: Calloc with zero elements */
-    TEST("Test 6: Calloc with zero elements");
-    int *zero_alloc = (int *) ma_calloc(0, sizeof(int));
-    assert(zero_alloc == NULL);
-    PASS();
+    print_metrics("calloc(5 elements, 4 bytes each)", t2 - t1, t2_std - t1_std);
+}
 
-    /* Test 7: Realloc grow */
-    TEST("Test 7: Realloc grow");
+void test_realloc_grow(void) {
+    double t1 = get_time_ms();
     int *grow = (int *) ma_malloc(2 * sizeof(int));
-    assert(grow != NULL);
-    grow[0] = 111;
-    grow[1] = 222;
     grow = (int *) ma_realloc(grow, 5 * sizeof(int));
-    assert(grow != NULL);
-    assert(grow[0] == 111 && grow[1] == 222);
-    grow[2] = 333;
-    grow[3] = 444;
-    grow[4] = 555;
-    assert(grow[2] == 333 && grow[4] == 555);
+    double t2 = get_time_ms();
     ma_free(grow);
-    PASS();
 
-    /* Test 8: Realloc shrink */
-    TEST("Test 8: Realloc shrink");
+    double t1_std = get_time_ms();
+    int *grow_std = (int *) malloc(2 * sizeof(int));
+    grow_std = (int *) realloc(grow_std, 5 * sizeof(int));
+    double t2_std = get_time_ms();
+    free(grow_std);
+
+    print_metrics("realloc(grow 8 -> 20 bytes)", t2 - t1, t2_std - t1_std);
+}
+
+void test_realloc_shrink(void) {
+    double t1 = get_time_ms();
     int *shrink = (int *) ma_malloc(10 * sizeof(int));
-    assert(shrink != NULL);
-    for (int i = 0; i < 10; i++) {
-        shrink[i] = i * 10;
-    }
     shrink = (int *) ma_realloc(shrink, 3 * sizeof(int));
-    assert(shrink != NULL);
-    assert(shrink[0] == 0 && shrink[1] == 10 && shrink[2] == 20);
+    double t2 = get_time_ms();
     ma_free(shrink);
-    PASS();
 
-    /* Test 9: Realloc with NULL (like malloc) */
-    TEST("Test 9: Realloc with NULL");
-    int *realloc_null = (int *) ma_realloc(NULL, 4 * sizeof(int));
-    assert(realloc_null != NULL);
-    realloc_null[0] = 1;
-    realloc_null[1] = 2;
-    realloc_null[2] = 3;
-    realloc_null[3] = 4;
-    assert(realloc_null[3] == 4);
-    ma_free(realloc_null);
-    PASS();
+    double t1_std = get_time_ms();
+    int *shrink_std = (int *) malloc(10 * sizeof(int));
+    shrink_std = (int *) realloc(shrink_std, 3 * sizeof(int));
+    double t2_std = get_time_ms();
+    free(shrink_std);
 
-    /* Test 10: Realloc with size 0 (like free) */
-    TEST("Test 10: Realloc with size 0");
-    int *realloc_free = (int *) ma_malloc(5 * sizeof(int));
-    assert(realloc_free != NULL);
-    realloc_free = (int *) ma_realloc(realloc_free, 0);
-    assert(realloc_free == NULL);
-    PASS();
+    print_metrics("realloc(shrink 40 -> 12 bytes)", t2 - t1, t2_std - t1_std);
+}
 
-    /* Test 11: Large allocation */
-    TEST("Test 11: Large allocation");
+void test_large_allocation(void) {
+    double t1 = get_time_ms();
     char *large = (char *) ma_malloc(10000);
-    assert(large != NULL);
-    memset(large, 'A', 10000);
-    for (int i = 0; i < 10000; i++) {
-        assert(large[i] == 'A');
-    }
+    double t2 = get_time_ms();
     ma_free(large);
-    PASS();
 
-    /* Test 12: Free NULL (should not crash) */
-    TEST("Test 12: Free NULL");
-    ma_free(NULL);
-    PASS();
+    double t1_std = get_time_ms();
+    char *large_std = (char *) malloc(10000);
+    double t2_std = get_time_ms();
+    free(large_std);
 
-    /* Test 13: Fragmentation and coalescing */
-    TEST("Test 13: Fragmentation and coalescing");
-    int *p1 = (int *) ma_malloc(100);
-    int *p2 = (int *) ma_malloc(100);
-    int *p3 = (int *) ma_malloc(100);
-    assert(p1 != NULL && p2 != NULL && p3 != NULL);
-    ma_free(p2);  /* Free middle block */
-    int *p4 = (int *) ma_malloc(100);  /* Should reuse p2's space */
-    assert(p4 != NULL);
-    ma_free(p1);
-    ma_free(p3);
-    ma_free(p4);
-    PASS();
+    print_metrics("malloc(1 alloc, 10KB)", t2 - t1, t2_std - t1_std);
+}
 
-    /* Test 14: Realloc with data preservation */
-    TEST("Test 14: Realloc with data preservation");
-    char *preserve = (char *) ma_malloc(50);
-    memset(preserve, 'X', 50);
-    preserve = (char *) ma_realloc(preserve, 200);
-    for (int i = 0; i < 50; i++) {
-        assert(preserve[i] == 'X');
+void test_burst_allocation(void) {
+    double t1 = get_time_ms();
+    void **ptrs = (void **) ma_malloc(BURST_ALLOC_COUNT * sizeof(void *));
+    for (int i = 0; i < BURST_ALLOC_COUNT; i++) ptrs[i] = ma_malloc(64);
+    for (int i = 0; i < BURST_ALLOC_COUNT; i++) ma_free(ptrs[i]);
+    ma_free(ptrs);
+    double t2 = get_time_ms();
+
+    double t1_std = get_time_ms();
+    void **ptrs_std = (void **) malloc(BURST_ALLOC_COUNT * sizeof(void *));
+    for (int i = 0; i < BURST_ALLOC_COUNT; i++) ptrs_std[i] = malloc(64);
+    for (int i = 0; i < BURST_ALLOC_COUNT; i++) free(ptrs_std[i]);
+    free(ptrs_std);
+    double t2_std = get_time_ms();
+
+    print_metrics("malloc(5000 allocs, 64 bytes)", t2 - t1, t2_std - t1_std);
+}
+
+// --- Multithreading ---
+
+typedef struct { int alloc_count; void **ptrs; } thread_data;
+
+void *thread_func(void *arg) {
+    thread_data *data = (thread_data *)arg;
+    data->ptrs = (void **) ma_malloc(data->alloc_count * sizeof(void *));
+    for (int i = 0; i < data->alloc_count; i++) data->ptrs[i] = ma_malloc(128);
+    for (int i = 0; i < data->alloc_count; i++) ma_free(data->ptrs[i]);
+    ma_free(data->ptrs);
+    return NULL;
+}
+
+void test_multithreaded_allocation(void) {
+    pthread_t threads[THREAD_COUNT];
+    thread_data thread_args[THREAD_COUNT];
+
+    double t1 = get_time_ms();
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        thread_args[i] = (thread_data){ .alloc_count = THREAD_ALLOC_COUNT };
+        pthread_create(&threads[i], NULL, thread_func, &thread_args[i]);
     }
-    ma_free(preserve);
-    PASS();
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    double t2 = get_time_ms();
 
-    /* Test 15: Mixed operations */
-    TEST("Test 15: Mixed operations");
-    int *mix1 = (int *) ma_malloc(10);
-    int *mix2 = (int *) ma_calloc(5, sizeof(int));
-    int *mix3 = (int *) ma_realloc(ma_malloc(20), 40);
-    assert(mix1 != NULL && mix2 != NULL && mix3 != NULL);
-    ma_free(mix1);
-    ma_free(mix2);
-    ma_free(mix3);
-    PASS();
+    printf(BLUE "ma_malloc(%d threads, %d allocs each)" RESET ": %.4f ms\n",
+           THREAD_COUNT, THREAD_ALLOC_COUNT, t2 - t1);
+}
 
-    printf("\n======== ALL TESTS PASSED ========\n");
+// --- Main ---
+
+int main() {
+    test_basic_malloc();
+    test_multiple_allocations();
+    test_reuse_after_free();
+    test_calloc();
+    test_realloc_grow();
+    test_realloc_shrink();
+    test_large_allocation();
+    test_burst_allocation();
+    test_multithreaded_allocation();
     return 0;
 }

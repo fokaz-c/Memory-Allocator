@@ -1,5 +1,3 @@
-/* Modification to memalloc.c */
-
 #include "memalloc.h"
 #include "memalloc_internal.h"
 #include <stddef.h>
@@ -8,25 +6,24 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
-
-/* ============================================================================
- * CONFIGURATION
- * ============================================================================ */
+#include <pthread.h>
 
 #define HEAP_SIZE (size_t)(1024 * 1024)
-
-/* ============================================================================
- * STATIC VARIABLES
- * ============================================================================ */
 
 static char *heap_pool = NULL;
 static size_t heap_offset = 0;
 static mem_block *free_mem_block_list_head = NULL;
 
+static pthread_mutex_t allocator_mutex;
+static pthread_once_t mutex_init_once = PTHREAD_ONCE_INIT;
 
-/* ============================================================================
- * HEAP INITIALIZATION
- * ============================================================================ */
+static void init_mutex(void) {
+    pthread_mutexattr_t attr;
+    pthread_mutexattr_init(&attr);
+    pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&allocator_mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+}
 
 static void init_heap(void) {
     if (heap_pool != NULL) {
@@ -55,11 +52,6 @@ static void cleanup_heap(void) {
         heap_offset = 0;
     }
 }
-
-
-/* ============================================================================
- * INTERNAL HELPER FUNCTIONS
- * ============================================================================ */
 
 static bool are_adjacent(mem_block *first, mem_block *second) {
     void *end_of_first = (char *)first + sizeof(mem_block) + first->size;
@@ -97,11 +89,6 @@ static void coalesce_with_neighbors(mem_block *block) {
         current = next_iter;
     }
 }
-
-
-/* ============================================================================
- * MEMORY BLOCK MANAGEMENT
- * ============================================================================ */
 
 void mem_block_init(mem_block *block, size_t size) {
     block->size = size;
@@ -190,21 +177,21 @@ void split_block(mem_block *block, size_t size) {
     }
 }
 
-
-/* ============================================================================
- * PUBLIC API IMPLEMENTATION
- * ============================================================================ */
-
 void *ma_malloc(size_t size) {
+    pthread_once(&mutex_init_once, init_mutex);
+    pthread_mutex_lock(&allocator_mutex);
+
     if (heap_pool == NULL) {
         init_heap();
     }
 
     if (heap_pool == NULL) {
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
     if (size == 0 || size > SIZE_MAX - sizeof(mem_block)) {
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
@@ -213,11 +200,12 @@ void *ma_malloc(size_t size) {
     if (block != NULL) {
         remove_from_free_mem_list(block);
         split_block(block, size);
+        pthread_mutex_unlock(&allocator_mutex);
         return (void *)((char *)block + sizeof(mem_block));
     }
 
-
     if (heap_offset + sizeof(mem_block) + size > HEAP_SIZE) {
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
@@ -227,41 +215,60 @@ void *ma_malloc(size_t size) {
 
     heap_offset += sizeof(mem_block) + size;
 
+    pthread_mutex_unlock(&allocator_mutex);
     return (void *)((char *)new_block + sizeof(mem_block));
 }
 
 void ma_free(void *ptr) {
+    pthread_once(&mutex_init_once, init_mutex);
+    pthread_mutex_lock(&allocator_mutex);
+
     if (ptr == NULL) {
+        pthread_mutex_unlock(&allocator_mutex);
         return;
     }
 
     mem_block *block = (mem_block *)((char *)ptr - sizeof(mem_block));
     add_to_free_mem_block_list(block);
+
+    pthread_mutex_unlock(&allocator_mutex);
 }
 
 void *ma_calloc(size_t n, size_t size) {
+    pthread_once(&mutex_init_once, init_mutex);
+    pthread_mutex_lock(&allocator_mutex);
+
     size_t total_size = n * size;
     if (n == 0 || total_size / n != size) {
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
     void *ptr = ma_malloc(total_size);
     if (ptr == NULL) {
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
     memset(ptr, 0, total_size);
 
+    pthread_mutex_unlock(&allocator_mutex);
     return ptr;
 }
 
 void *ma_realloc(void *ptr, size_t size) {
+    pthread_once(&mutex_init_once, init_mutex);
+    pthread_mutex_lock(&allocator_mutex);
+
     if (ptr == NULL) {
-        return ma_malloc(size);
+        void *result = ma_malloc(size);
+        pthread_mutex_unlock(&allocator_mutex);
+        return result;
     }
 
     if (size == 0) {
         ma_free(ptr);
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
@@ -269,6 +276,7 @@ void *ma_realloc(void *ptr, size_t size) {
     size_t old_size = current->size;
 
     if (size <= old_size) {
+        pthread_mutex_unlock(&allocator_mutex);
         return ptr;
     }
 
@@ -284,6 +292,7 @@ void *ma_realloc(void *ptr, size_t size) {
                 split_block(current, size);
             }
 
+            pthread_mutex_unlock(&allocator_mutex);
             return ptr;
         }
         free_node = free_node->next;
@@ -291,22 +300,21 @@ void *ma_realloc(void *ptr, size_t size) {
 
     void *newptr = ma_malloc(size);
     if (newptr == NULL) {
+        pthread_mutex_unlock(&allocator_mutex);
         return NULL;
     }
 
     memcpy(newptr, ptr, old_size);
-
     ma_free(ptr);
 
+    pthread_mutex_unlock(&allocator_mutex);
     return newptr;
 }
 
-
-/* ============================================================================
- * DEBUG AND UTILITY FUNCTIONS
- * ============================================================================ */
-
 void ma_print_free_list(void) {
+    pthread_once(&mutex_init_once, init_mutex);
+    pthread_mutex_lock(&allocator_mutex);
+
     mem_block *current = free_mem_block_list_head;
     int count = 0;
 
@@ -325,9 +333,10 @@ void ma_print_free_list(void) {
     printf("Heap usage: %zu / %zu bytes (%.2f%%)\n",
            heap_offset, HEAP_SIZE, (double)heap_offset / HEAP_SIZE * 100);
     printf("\n");
+
+    pthread_mutex_unlock(&allocator_mutex);
 }
 
-/* Add cleanup on exit */
 __attribute__((destructor))
 static void cleanup_on_exit(void) {
     cleanup_heap();

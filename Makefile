@@ -1,6 +1,6 @@
 CC = clang
-CFLAGS = -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -Iinclude
-CFLAGS_DEBUG = $(CFLAGS) -g           # debug symbols
+CFLAGS = -Wall -Wextra -std=c11 -D_DEFAULT_SOURCE -Iinclude -pthread
+CFLAGS_DEBUG = $(CFLAGS) -g
 TARGET = build/memalloc
 BUILD_DIR = build
 
@@ -15,11 +15,9 @@ $(BUILD_DIR):
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(OBJS)
 
-# Object files
 $(BUILD_DIR)/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Debug build + run in gdb
 debug: $(BUILD_DIR)
 	$(CC) $(CFLAGS_DEBUG) $(SRCS) -o $(TARGET)
 	gdb ./$(TARGET)

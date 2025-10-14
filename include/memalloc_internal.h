@@ -4,25 +4,16 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-/* ============================================================================
- * INTERNAL STRUCTURES
- * ============================================================================ */
-
 /**
  * Memory block metadata structure.
  * Stored immediately before each allocated/free block.
  */
 typedef struct mem_block {
-    size_t size;              /* Size of usable memory (excluding header) */
-    bool is_Free;             /* Whether this block is free */
-    struct mem_block *prev;   /* Previous block in free list */
-    struct mem_block *next;   /* Next block in free list */
+    size_t size;
+    bool is_Free;
+    struct mem_block *prev;
+    struct mem_block *next;
 } mem_block;
-
-
-/* ============================================================================
- * INTERNAL FUNCTIONS
- * ============================================================================ */
 
 /**
  * Initialize a memory block with given size.

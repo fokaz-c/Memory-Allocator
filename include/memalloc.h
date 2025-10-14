@@ -3,10 +3,6 @@
 
 #include <stddef.h>
 
-/* ============================================================================
- * PUBLIC API - Memory Allocation Functions
- * ============================================================================ */
-
 /**
  * Allocate memory of specified size.
  * @param size Number of bytes to allocate
@@ -40,6 +36,7 @@ void *ma_realloc(void *ptr, size_t size);
  * Print the current state of the free list.
  * Useful for debugging and understanding allocator behavior.
  */
-void ma_print_free_list(void);
+//uncomment to use this
+//void ma_print_free_list(void);
 
 #endif /* MEMALLOC_H */
