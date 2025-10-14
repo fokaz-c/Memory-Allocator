@@ -1,77 +1,90 @@
-# Custom Memory Allocator in C
+# Memalloc – Memory Allocator
 
-This project is a **custom implementation of a dynamic memory allocator in C**, built from scratch to explore how low-level heap management works.
-It replicates the behavior of standard C library functions like `malloc`, `calloc`, `realloc`, and `free` using the `sbrk()` system call for direct heap manipulation.
+A high-performance, thread-safe dynamic memory allocator implementation from scratch. Memalloc replicates the core functionality of standard C library functions (`malloc`, `calloc`, `realloc`, `free`) with custom heap management and intelligent fragmentation control.
 
----
+## Features
 
-## Overview
+**Core Functionality**
+- Drop-in replacement for standard C memory functions: `ma_malloc()`, `ma_free()`, `ma_calloc()`, and `ma_realloc()`
+- Direct heap management using `mmap()` for efficient memory provisioning
+- 1MB pre-allocated heap pool with dynamic block management
+- Zero external dependencies
 
-The allocator demonstrates how dynamic memory allocation can be managed manually in user space.
-It implements core allocation strategies and data structures used in real-world memory managers, with a focus on **efficiency**, **fragmentation control**, and **extensibility** for future improvements.
+**Memory Management Strategies**
+- **Best-fit allocation** – Selects the smallest available block that satisfies the request, minimizing internal fragmentation
+- **Block splitting** – Divides oversized blocks into allocated and free portions to reduce wasted space
+- **Automatic coalescing** – Merges adjacent free blocks to mitigate external fragmentation
+- **Doubly-linked free list** – Efficient tracking of freed blocks with straightforward O(n) search
 
----
+**Thread Safety**
+- Recursive mutex protection for all public functions
+- Thread-safe heap initialization and concurrent allocation/deallocation
+- Safe for use in multi-threaded applications
+- Automatic cleanup on program exit
 
-## Implementation Details
+## Architecture
 
-The allocator is built around these core design elements:
+Each memory block is prefixed with a `mem_block` metadata header:
 
-* **Heap Management** – Uses `sbrk()` to expand the program’s data segment on demand.
-* **Data Structure** – A **doubly linked list** maintains free and allocated blocks. Each block starts with a `mem_block` header containing metadata such as block size, free status, and links to adjacent blocks.
-* **Allocation Strategy** – Employs a **best-fit** approach to minimize internal fragmentation by selecting the smallest available block that fits the request.
-* **Block Splitting** – If a free block is significantly larger than required, it is split into an allocated and a free portion.
-* **Coalescing** – Adjacent free blocks are merged automatically by `coalesce_with_neighbors()` to reduce external fragmentation.
+```c
+typedef struct mem_block {
+    size_t size;              // User-requested allocation size
+    bool is_Free;             // Current allocation status
+    struct mem_block *prev;   // Link to previous free block
+    struct mem_block *next;   // Link to next free block
+} mem_block;
+```
 
----
+The allocator maintains a free list of deallocated blocks. When `ma_malloc()` is called, it searches the free list using a best-fit strategy. If no suitable block exists, it expands the heap pool. When `ma_free()` is called, the block is returned to the free list and automatically coalesced with adjacent free blocks to reduce fragmentation.
 
-## API
+## API Reference
 
-The allocator provides the following functions:
+**`void *ma_malloc(size_t size)`**
+Allocates `size` bytes of uninitialized heap memory. Returns a pointer to the allocated memory or `NULL` on failure.
 
-* `void *ma_malloc(size_t size)` – Allocates `size` bytes of uninitialized memory.
-* `void ma_free(void *ptr)` – Deallocates memory and returns it to the free list.
-* `void *ma_calloc(size_t n, size_t size)` – Allocates and zero-initializes memory for an array.
-* `void *ma_realloc(void *ptr, size_t size)` – Resizes an existing allocation, preserving its contents.
+**`void *ma_calloc(size_t n, size_t size)`**
+Allocates memory for an array of `n` elements, each `size` bytes. All bytes are initialized to zero. Returns a pointer or `NULL` on failure.
 
----
+**`void *ma_realloc(void *ptr, size_t size)`**
+Resizes an existing allocation to `size` bytes. If the block can be expanded in-place using adjacent free space, the original pointer is returned. Otherwise, a new block is allocated, contents are copied, and the old block is freed.
 
-## Build and Run
+**`void ma_free(void *ptr)`**
+Deallocates memory previously allocated by `ma_malloc()`, `ma_calloc()`, or `ma_realloc()`. The block is added to the free list and automatically coalesced with neighbors.
 
-A `Makefile` is provided for easy compilation and testing.
+**`void ma_print_free_list(void)`**
+Prints the current state of the free list and heap usage statistics. Useful for diagnosing fragmentation and memory availability.
 
-**Build the project:**
+## Building
 
+**Build the static library:**
 ```bash
 make
 ```
 
-**Run the executable:**
-
+**Run benchmarks and examples:**
 ```bash
 make run
 ```
 
-**Clean build artifacts:**
+**Debug with GDB:**
+```bash
+make debug
+```
 
+**Clean build artifacts:**
 ```bash
 make clean
 ```
 
----
+## Performance Analysis
 
-## Ongoing Development
+- **Allocation Time** – O(n) where n is the number of free blocks (best-fit search)
+- **Deallocation Time** – O(n) due to coalescing and free list updates
+- **Memory Overhead** – Each block carries a `mem_block` header (~32 bytes on 64-bit systems)
+- **Fragmentation** – Minimized through block splitting and coalescing, though external fragmentation may accumulate with certain allocation patterns
 
-Active development is focused on **enhancing performance, safety, and usability**.
-Current efforts include:
+For production systems requiring extreme performance, consider upgrading to advanced allocation strategies such as segregated fits, buddy allocation, or balanced search trees for O(log n) lookups.
 
-* **Thread Safety** – Introducing synchronization primitives to make the allocator multi-threaded.
-* **Performance Profiling** – Adding benchmarking tools to measure allocation and free times.
-* **Debug Utilities** – Building diagnostic APIs for leak detection and heap visualization.
----
+## License
 
-## References and Further Reading
-
-For more context on the concepts behind this project:
-
-* [Dynamic Memory Allocation in C](./docs/dynamic-memory-allocation-in-c.md)
-* [Memory Layout in C](./docs/memory-layout-c.md)
+This project is licensed under the MIT License. See the `LICENSE` file for details.

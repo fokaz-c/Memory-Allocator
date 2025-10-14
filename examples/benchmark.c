@@ -28,11 +28,9 @@ double get_time_ms(void) {
 // --- Helper for printing metrics ---
 void print_metrics(const char *label, double t_ma, double t_std) {
     if (t_std <= 0) return;
-    double ratio = t_ma / t_std;
-    const char *color = (ratio >= 1.0) ? RED : GREEN;
-    const char *comparison = (ratio >= 1.0) ? "slower" : "faster";
-    printf(BLUE "%s" RESET ": %.4f ms | stdlib: %.4f ms | %s%.1fx %s" RESET "\n",
-           label, t_ma, t_std, color, ratio, comparison);
+    const char *color = (t_ma > t_std) ? RED : GREEN;
+    printf(BLUE "%s" RESET ": %s%.4f ms" RESET " | stdlib: %.4f ms\n",
+           label, color, t_ma, t_std);
 }
 
 // --- Test Cases ---
