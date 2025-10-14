@@ -176,6 +176,15 @@ void *thread_func(void *arg) {
     return NULL;
 }
 
+void *thread_func_std(void *arg) {
+    thread_data *data = (thread_data *)arg;
+    data->ptrs = (void **) malloc(data->alloc_count * sizeof(void *));
+    for (int i = 0; i < data->alloc_count; i++) data->ptrs[i] = malloc(128);
+    for (int i = 0; i < data->alloc_count; i++) free(data->ptrs[i]);
+    free(data->ptrs);
+    return NULL;
+}
+
 void test_multithreaded_allocation(void) {
     pthread_t threads[THREAD_COUNT];
     thread_data thread_args[THREAD_COUNT];
@@ -190,8 +199,19 @@ void test_multithreaded_allocation(void) {
     }
     double t2 = get_time_ms();
 
-    printf(BLUE "ma_malloc(%d threads, %d allocs each)" RESET ": %.4f ms\n",
-           THREAD_COUNT, THREAD_ALLOC_COUNT, t2 - t1);
+    double t1_std = get_time_ms();
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        thread_args[i] = (thread_data){ .alloc_count = THREAD_ALLOC_COUNT };
+        pthread_create(&threads[i], NULL, thread_func_std, &thread_args[i]);
+    }
+    for (int i = 0; i < THREAD_COUNT; i++) {
+        pthread_join(threads[i], NULL);
+    }
+    double t2_std = get_time_ms();
+
+    const char *color = (t2 - t1 > t2_std - t1_std) ? RED : GREEN;
+    printf(BLUE "malloc(%d threads, %d allocs each)" RESET ": %s%.4f ms" RESET " | stdlib: %.4f ms\n",
+           THREAD_COUNT, THREAD_ALLOC_COUNT, color, t2 - t1, t2_std - t1_std);
 }
 
 // --- Main ---
